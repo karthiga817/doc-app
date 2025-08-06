@@ -145,11 +145,7 @@ const AdminLogin: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-6 p-4 bg-purple-50 rounded-lg">
-            <p className="text-sm text-purple-800">
-              <strong>Default Login:</strong> Use admin@medbook.com / admin123 for demo access.
-            </p>
-          </div>
+
         </div>
       </div>
     </div>

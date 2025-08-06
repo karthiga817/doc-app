@@ -145,11 +145,7 @@ const DoctorLogin: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <strong>Demo Login:</strong> Use doctor@medbook.com / doctor123 for testing.
-            </p>
-          </div>
+
         </div>
       </div>
     </div>
