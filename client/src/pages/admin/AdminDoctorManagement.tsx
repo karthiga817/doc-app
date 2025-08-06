@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
-import { Stethoscope, Plus, Edit, Trash2, Search, Filter, UserCheck, UserX } from 'lucide-react';
+import { apiClient } from '../../lib/api';
+import { Stethoscope, Plus, Edit, Trash2, Search, Filter, UserCheck, UserX, X, Eye, EyeOff } from 'lucide-react';
 
 const AdminDoctorManagement: React.FC = () => {
-  const { doctors, loading } = useApp();
+  const { doctors, loading, refreshData } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    specialization: '',
+    experience: 0
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const filteredDoctors = doctors.filter(doctor => {
     const matchesSearch = doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -20,6 +32,48 @@ const AdminDoctorManagement: React.FC = () => {
 
   const activeDoctors = doctors.filter(doc => doc.isActive).length;
   const inactiveDoctors = doctors.filter(doc => !doc.isActive).length;
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'experience' ? parseInt(value) || 0 : value
+    }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      email: '',
+      password: '',
+      phone: '',
+      specialization: '',
+      experience: 0
+    });
+    setError('');
+    setShowAddForm(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const response = await apiClient.createDoctorAccount(formData);
+      if (response.success) {
+        resetForm();
+        await refreshData();
+        alert('Doctor account created successfully!');
+      } else {
+        setError('Failed to create doctor account');
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to create doctor account');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -175,6 +229,157 @@ const AdminDoctorManagement: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Add Doctor Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Add New Doctor</h2>
+              <button
+                onClick={resetForm}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Dr. John Smith"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="doctor@medbook.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Password *
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+1-555-0100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Specialization *
+                </label>
+                <select
+                  name="specialization"
+                  value={formData.specialization}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select Specialization</option>
+                  <option value="General Medicine">General Medicine</option>
+                  <option value="Cardiology">Cardiology</option>
+                  <option value="Dermatology">Dermatology</option>
+                  <option value="Neurology">Neurology</option>
+                  <option value="Orthopedics">Orthopedics</option>
+                  <option value="Pediatrics">Pediatrics</option>
+                  <option value="Psychiatry">Psychiatry</option>
+                  <option value="Surgery">Surgery</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Experience (Years)
+                </label>
+                <input
+                  type="number"
+                  name="experience"
+                  value={formData.experience}
+                  onChange={handleInputChange}
+                  min="0"
+                  max="50"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="5"
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? 'Creating...' : 'Create Doctor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

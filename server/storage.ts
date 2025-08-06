@@ -58,7 +58,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(user).returning();
+    const result = await db.insert(users).values([{
+      ...user,
+      role: user.role as 'admin' | 'doctor' | 'patient'
+    }]).returning();
     return result[0];
   }
 
@@ -95,7 +98,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDoctor(doctor: InsertDoctor): Promise<Doctor> {
-    const result = await db.insert(doctors).values(doctor).returning();
+    const result = await db.insert(doctors).values([doctor]).returning();
     return result[0];
   }
 
@@ -132,7 +135,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPatient(patient: InsertPatient): Promise<Patient> {
-    const result = await db.insert(patients).values(patient).returning();
+    const result = await db.insert(patients).values([patient]).returning();
     return result[0];
   }
 
@@ -158,7 +161,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
-    const result = await db.insert(appointments).values(appointment).returning();
+    const result = await db.insert(appointments).values([{
+      ...appointment,
+      status: appointment.status as 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'completed' | undefined
+    }]).returning();
     return result[0];
   }
 
@@ -184,7 +190,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPrescription(prescription: InsertPrescription): Promise<Prescription> {
-    const result = await db.insert(prescriptions).values(prescription).returning();
+    const result = await db.insert(prescriptions).values([prescription]).returning();
     return result[0];
   }
 

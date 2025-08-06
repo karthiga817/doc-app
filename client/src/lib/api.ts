@@ -127,6 +127,14 @@ export class ApiClient {
       body: JSON.stringify(updates),
     });
   }
+
+  // Admin methods
+  async createDoctorAccount(doctorData: any) {
+    return this.request<ApiResponse<any>>('/admin/doctors', {
+      method: 'POST',
+      body: JSON.stringify(doctorData),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

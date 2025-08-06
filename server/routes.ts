@@ -2,58 +2,59 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertDoctorSchema, insertPatientSchema, insertAppointmentSchema, insertPrescriptionSchema } from "@shared/schema";
+import bcrypt from "bcryptjs";
+
+// Initialize admin user if it doesn't exist
+async function initializeAdmin() {
+  try {
+    const existingAdmin = await storage.getUserByEmail('admin@medbook.com');
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await storage.createUser({
+        email: 'admin@medbook.com',
+        password: hashedPassword,
+        name: 'System Administrator',
+        phone: '+1-555-0100',
+        role: 'admin'
+      });
+      console.log('Admin user created: admin@medbook.com / admin123');
+    }
+  } catch (error) {
+    console.error('Error initializing admin:', error);
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize admin user on startup
+  await initializeAdmin();
+
   // Auth routes
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
       
-      // Handle demo logins for development
-      const demoUsers = {
-        'admin@medbook.com': {
-          id: '00000000-0000-0000-0000-000000000001',
-          email: 'admin@medbook.com',
-          name: 'System Administrator',
-          phone: '+1-555-0100',
-          role: 'admin' as const,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        'doctor@medbook.com': {
-          id: '00000000-0000-0000-0000-000000000002',
-          email: 'doctor@medbook.com',
-          name: 'Dr. John Smith',
-          phone: '+1-555-0200',
-          role: 'doctor' as const,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        'patient@medbook.com': {
-          id: '00000000-0000-0000-0000-000000000003',
-          email: 'patient@medbook.com',
-          name: 'Jane Doe',
-          phone: '+1-555-0300',
-          role: 'patient' as const,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      };
-
-      if (demoUsers[email as keyof typeof demoUsers] && (password === 'admin123' || password === 'doctor123' || password === 'patient123')) {
-        res.json({ user: demoUsers[email as keyof typeof demoUsers], success: true });
+      if (!email || !password) {
+        res.status(400).json({ message: 'Email and password are required', success: false });
         return;
       }
 
-      // Try to find user in database
+      // Find user in database
       const user = await storage.getUserByEmail(email);
       if (!user) {
         res.status(401).json({ message: 'Invalid credentials', success: false });
         return;
       }
 
-      // In a real app, you'd verify the password hash here
-      res.json({ user, success: true });
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        res.status(401).json({ message: 'Invalid credentials', success: false });
+        return;
+      }
+
+      // Remove password from response
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ data: userWithoutPassword, success: true });
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ message: 'Internal server error', success: false });
@@ -63,11 +64,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/register", async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
-      const user = await storage.createUser(userData);
-      res.json({ user, success: true });
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(userData.email);
+      if (existingUser) {
+        res.status(400).json({ message: 'User with this email already exists', success: false });
+        return;
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const userToCreate = { ...userData, password: hashedPassword };
+      
+      const user = await storage.createUser(userToCreate);
+      
+      // Remove password from response
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ data: userWithoutPassword, success: true });
     } catch (error) {
       console.error('Registration error:', error);
       res.status(400).json({ message: 'Registration failed', success: false });
+    }
+  });
+
+  // Admin route to create doctor accounts
+  app.post("/api/admin/doctors", async (req, res) => {
+    try {
+      const { email, password, name, phone, specialization, experience } = req.body;
+      
+      if (!email || !password || !name || !phone || !specialization) {
+        res.status(400).json({ message: 'All fields are required', success: false });
+        return;
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        res.status(400).json({ message: 'User with this email already exists', success: false });
+        return;
+      }
+
+      // Hash password and create user
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        name,
+        phone,
+        role: 'doctor'
+      });
+
+      // Create doctor profile
+      const doctor = await storage.createDoctor({
+        userId: user.id,
+        specialization,
+        experience: experience || 0,
+        availability: [{}],
+        leaveDays: [],
+        isActive: true
+      });
+
+      res.json({ 
+        data: { user: { ...user, password: undefined }, doctor }, 
+        success: true 
+      });
+    } catch (error) {
+      console.error('Error creating doctor:', error);
+      res.status(500).json({ message: 'Failed to create doctor account', success: false });
     }
   });
 
