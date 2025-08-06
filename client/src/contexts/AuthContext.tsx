@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
-import { User as SupabaseUser } from '@supabase/supabase-js';
+import { apiClient } from '../lib/api';
 
 interface User {
   id: string;
@@ -28,119 +27,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user);
-      } else {
-        setLoading(false);
+    // Check for stored user session
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error('Error parsing stored user:', error);
+        localStorage.removeItem('user');
       }
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        await fetchUserProfile(session.user);
-      } else {
-        setUser(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUserProfile = async (supabaseUser: SupabaseUser) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', supabaseUser.id)
-        .single();
-
-      if (error) throw error;
-
-      if (data) {
-        setUser({
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          phone: data.phone,
-          role: data.role,
-          createdAt: data.created_at
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
-    } finally {
-      setLoading(false);
     }
-  };
+    setLoading(false);
+  }, []);
 
   const login = async (email: string, password: string, expectedRole?: string): Promise<boolean> => {
     try {
-      // Handle demo logins
-      if (email === 'admin@medbook.com' && password === 'admin123') {
-        const demoAdmin = {
-          id: '00000000-0000-0000-0000-000000000001',
-          email: 'admin@medbook.com',
-          name: 'System Administrator',
-          phone: '+1-555-0100',
-          role: 'admin' as const,
-          createdAt: new Date().toISOString()
+      const response = await apiClient.login(email, password);
+      
+      if (response.success && response.data) {
+        const userData = {
+          id: response.data.id,
+          email: response.data.email,
+          name: response.data.name,
+          phone: response.data.phone,
+          role: response.data.role,
+          createdAt: response.data.createdAt || new Date().toISOString()
         };
-        setUser(demoAdmin);
+        
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
         return true;
       }
       
-      if (email === 'doctor@medbook.com' && password === 'doctor123') {
-        const demoDoctor = {
-          id: '00000000-0000-0000-0000-000000000002',
-          email: 'doctor@medbook.com',
-          name: 'Dr. John Smith',
-          phone: '+1-555-0200',
-          role: 'doctor' as const,
-          createdAt: new Date().toISOString()
-        };
-        setUser(demoDoctor);
-        return true;
-      }
-      
-      if (email === 'patient@medbook.com' && password === 'patient123') {
-        const demoPatient = {
-          id: '00000000-0000-0000-0000-000000000003',
-          email: 'patient@medbook.com',
-          name: 'Jane Doe',
-          phone: '+1-555-0300',
-          role: 'patient' as const,
-          createdAt: new Date().toISOString()
-        };
-        setUser(demoPatient);
-        return true;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) throw error;
-
-      if (data.user && expectedRole) {
-        // Fetch user profile to check role
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', data.user.id)
-          .single();
-
-        if (userError || !userData || userData.role !== expectedRole) {
-          await supabase.auth.signOut();
-          return false;
-        }
-      }
-
-      return !!data.user;
+      return false;
     } catch (error) {
       console.error('Login error:', error);
       return false;
@@ -149,8 +68,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      await supabase.auth.signOut();
       setUser(null);
+      localStorage.removeItem('user');
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -158,59 +77,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = async (userData: any): Promise<boolean> => {
     try {
-      // Sign up with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password
-      });
-
-      if (authError) throw authError;
-
-      if (authData.user) {
-        // Create user profile
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert({
-            id: authData.user.id,
-            email: userData.email,
-            name: userData.name,
-            phone: userData.phone,
-            role: userData.role || 'patient'
-          });
-
-        if (profileError) throw profileError;
-
-        // If patient, create patient record
-        if (userData.role === 'patient' || !userData.role) {
-          const { error: patientError } = await supabase
-            .from('patients')
-            .insert({
-              user_id: authData.user.id,
-              date_of_birth: userData.dateOfBirth,
-              address: userData.address
-            });
-
-          if (patientError) throw patientError;
-        }
-
-        // If doctor, create doctor record
-        if (userData.role === 'doctor') {
-          const { error: doctorError } = await supabase
-            .from('doctors')
-            .insert({
-              user_id: authData.user.id,
-              specialization: userData.specialization,
-              experience: userData.experience || 0,
-              availability: userData.availability || [],
-              is_active: true
-            });
-
-          if (doctorError) throw doctorError;
-        }
-
+      const response = await apiClient.register(userData);
+      
+      if (response.success && response.data) {
+        // Auto-login after successful registration
+        const userDataForStorage = {
+          id: response.data.id,
+          email: response.data.email,
+          name: response.data.name,
+          phone: response.data.phone,
+          role: response.data.role,
+          createdAt: response.data.createdAt || new Date().toISOString()
+        };
+        
+        setUser(userDataForStorage);
+        localStorage.setItem('user', JSON.stringify(userDataForStorage));
         return true;
       }
-
+      
       return false;
     } catch (error) {
       console.error('Registration error:', error);
@@ -220,11 +104,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const forgotPassword = async (email: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`
-      });
-
-      if (error) throw error;
+      // For now, just return true since we're using a simple demo auth system
+      // In a real app, this would send a password reset email
+      console.log('Password reset requested for:', email);
       return true;
     } catch (error) {
       console.error('Forgot password error:', error);
@@ -234,11 +116,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const resetPassword = async (token: string, newPassword: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-
-      if (error) throw error;
+      // For now, just return true since we're using a simple demo auth system
+      // In a real app, this would verify the token and update the password
+      console.log('Password reset for token:', token);
       return true;
     } catch (error) {
       console.error('Reset password error:', error);

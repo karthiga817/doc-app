@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { apiClient } from '../../lib/api';
 import { User, Search, Filter, Calendar, Phone, Mail } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -25,48 +25,30 @@ const AdminPatientManagement: React.FC = () => {
 
   const fetchPatients = async () => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          id,
-          name,
-          email,
-          phone,
-          created_at,
-          patients!patients_user_id_fkey (
-            date_of_birth,
-            address
-          )
-        `)
-        .eq('role', 'patient');
+      // Get patients and appointments from our API
+      const [patientsData, appointmentsData] = await Promise.all([
+        apiClient.getPatients(),
+        apiClient.getAppointments()
+      ]);
 
-      if (error) throw error;
-
-      // Get appointment counts for each patient
-      const { data: appointmentCounts, error: countError } = await supabase
-        .from('appointments')
-        .select('patient_id')
-        .in('patient_id', data?.map(p => p.id) || []);
-
-      if (countError) throw countError;
-
-      const countMap = appointmentCounts?.reduce((acc, apt) => {
-        acc[apt.patient_id] = (acc[apt.patient_id] || 0) + 1;
+      // Count appointments for each patient
+      const countMap = appointmentsData?.reduce((acc, apt) => {
+        acc[apt.patientId] = (acc[apt.patientId] || 0) + 1;
         return acc;
       }, {} as Record<string, number>) || {};
 
-      const patientsData = data?.map(patient => ({
+      const mappedPatients = patientsData?.map(patient => ({
         id: patient.id,
-        name: patient.name,
-        email: patient.email,
-        phone: patient.phone,
-        dateOfBirth: patient.patients?.[0]?.date_of_birth || '',
-        address: patient.patients?.[0]?.address || '',
-        createdAt: patient.created_at,
-        appointmentCount: countMap[patient.id] || 0
+        name: patient.user.name,
+        email: patient.user.email,
+        phone: patient.user.phone,
+        dateOfBirth: patient.dateOfBirth || '',
+        address: patient.address || '',
+        createdAt: patient.createdAt,
+        appointmentCount: countMap[patient.userId] || 0
       })) || [];
 
-      setPatients(patientsData);
+      setPatients(mappedPatients);
     } catch (error) {
       console.error('Error fetching patients:', error);
     } finally {
